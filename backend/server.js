@@ -1,5 +1,5 @@
 const express = require('express');
-const mysql = require('mysql2');
+const { Pool } = require('pg');
 const bodyParser = require('body-parser');
 const bcrypt = require('bcrypt');
 const cors = require('cors');
@@ -14,16 +14,22 @@ app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
 // Database connection
-const db = mysql.createConnection({
-  host: 'localhost',
-  user: 'root',
-  password: 'manan04$',
-  database: 'spotify'
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD || 'manan04$',
+  database: process.env.DB_NAME || 'spotify',
+  port: process.env.DB_PORT || 5432
 });
 
-db.connect(err => {
-  if (err) throw err;
-  console.log('Connected to MySQL database');
+// Test database connection
+pool.connect((err, client, release) => {
+  if (err) {
+    console.error('Error connecting to PostgreSQL database:', err);
+    return;
+  }
+  console.log('Connected to PostgreSQL database');
+  release();
 });
 
 // Serve static files from the parent directory
@@ -92,47 +98,38 @@ app.post('/signup', async (req, res) => {
   const { email, password, name } = req.body;
   try {
     const hashedPassword = await bcrypt.hash(password, 10);
-    const sql = 'INSERT INTO users (email, password, name) VALUES (?, ?, ?)';
-    db.query(sql, [email, hashedPassword, name], (err, result) => {
-      if (err) {
-        console.error("Error registering user:", err);
-        return res.status(500).send('Error registering user');
-      }
-      res.send('User registered successfully');
-    });
+    const result = await pool.query(
+      'INSERT INTO users (email, password, name) VALUES ($1, $2, $3) RETURNING *',
+      [email, hashedPassword, name]
+    );
+    res.send('User registered successfully');
   } catch (error) {
     console.error("Error in signup:", error);
     res.status(500).send('Error registering user');
   }
 });
 
-app.post('/login', (req, res) => {
+app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  const sql = 'SELECT * FROM users WHERE email = ?';
-  db.query(sql, [email], async (err, results) => {
-    if (err) {
-      console.error("Error during login query:", err);
-      return res.status(500).send('Server error');
-    }
+  try {
+    const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
     
-    if (results.length === 0) {
+    if (result.rows.length === 0) {
       return res.status(401).send('Invalid credentials');
     }
     
-    try {
-      const validPassword = await bcrypt.compare(password, results[0].password);
-      if (!validPassword) {
-        return res.status(401).send('Invalid credentials');
-      }
-      res.send('Login successful');
-    } catch (error) {
-      console.error("Password comparison error:", error);
-      res.status(500).send('Server error');
+    const validPassword = await bcrypt.compare(password, result.rows[0].password);
+    if (!validPassword) {
+      return res.status(401).send('Invalid credentials');
     }
-  });
+    res.send('Login successful');
+  } catch (error) {
+    console.error("Error during login:", error);
+    res.status(500).send('Server error');
+  }
 });
 
-const port = 3000;
+const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
 });

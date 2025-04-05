@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: spotify-clone
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DB_HOST
+        fromDatabase:
+          name: spotify-db
+          property: host
+      - key: DB_USER
+        fromDatabase:
+          name: spotify-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: spotify-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: spotify-db
+          property: database 
